@@ -1,0 +1,75 @@
+import time
+import zmq
+import tkinter as tk
+from tkinter import messagebox 
+import threading
+import uuid # uuid to uniquely identify each client
+import json # json to parse messages
+
+class userClient:
+    def __init__(self, master):
+        self.master = master
+        self.master.geometry("500x500")
+        self.title("Messaging App")
+        self.master.resizable(False, False)
+
+        self.clientId = str(uuid.uuid4())
+        self.loggedIn = False
+
+        self.context = zmq.Context()
+
+        # prompt user with login screen
+        self.promptLogIn()
+
+        # calls function specifying widgets for gui
+        self.setupGui()
+
+        # future implementation of listening thread.
+        #self.listenThread = threading.Thread(target=self.listenForUpdates)
+        #self.listenThread.daemon = True
+        #self.listenThread.start()
+
+    def promptLogIn(self):
+        self.logInWindow = tk.Toplevel(self.master)
+        self.logInWindow.title("Enter Login")
+        self.logInWindow.geometry("400x200")
+        self.logInWindow.resizable(False, False)
+
+        # Labels and entry widgets for the addresses
+        tk.Label(self.logInWindow, text="Enter username:").pack(pady=5)
+        self.userNameEntry = tk.Entry(self.logInWindow, width=40)
+        self.userNameEntry.pack()
+        tk.Label(self.logInWindow, text="Enter Password:").pack(pady=5)
+        self.passwordEntry = tk.Entry(self.logInWindow, width=40)
+        self.passwordEntry.pack()
+
+        # Add a Connect button
+        tk.Button(self.logInWindow, text="Log in", command=self.checkCredentials).pack(pady=10)
+
+        # Wait for the window to be closed
+        self.master.wait_window(self.logInWindow)
+    def checkCredentials(self):
+        self.userNameEntry = self.userNameEntry.get()
+        self.passwordEntry = self.passwordEntry.get()
+
+        socket = self.context.socket(zmq.REQ)
+        socket.connect("tcp://127.0.0.1:5555")
+
+        loginMessage = {
+            "action": "login",
+            "clientId": self.clientId,
+            "username": self.userNameEntry,
+            "password": self.passwordEntry
+
+        }
+        # send message
+        socket.send_json(loginMessage)
+        
+        response = socket.recv_json()
+
+
+            
+    
+    
+
+    
