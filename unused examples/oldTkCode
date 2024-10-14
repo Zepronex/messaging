@@ -1,0 +1,108 @@
+class userClient:
+    def __init__(self, master):
+        self.master = master
+        self.master.geometry("500x500")
+        self.master.title("Messaging App")
+        self.master.resizable(False, False)
+
+        self.attemptedLogins = 0
+
+        self.clientId = str(uuid.uuid4())
+        self.loggedIn = False
+
+        self.lockedUp = False
+        
+
+        self.context = zmq.Context()
+
+        self.reqSocket = self.context.socket(zmq.REQ)
+        self.reqSocket.connect("tcp://127.0.0.1:5555")
+
+        # prompt user with login screen
+        self.promptLogIn()
+
+        # future implementation of listening thread.
+        #self.listenThread = threading.Thread(target=self.listenForUpdates)
+        #self.listenThread.daemon = True
+        #self.listenThread.start()
+
+    def promptLogIn(self):
+        self.logInWindow = tk.Toplevel(self.master)
+        self.logInWindow.title("Enter Login")
+        self.logInWindow.geometry("350x220")
+        self.logInWindow.resizable(False, False)
+
+        # Labels and entry widgets for the addresses
+        tk.Label(self.logInWindow, text="Username: ").pack(pady=5)
+        self.usernameEntry = tk.Entry(self.logInWindow, width=20)
+        self.usernameEntry.pack()
+        tk.Label(self.logInWindow, text="Password: ").pack(pady=5)
+        self.passwordEntry = tk.Entry(self.logInWindow, width=20)
+        self.passwordEntry.pack()
+
+        # add login button to gui 
+        tk.Button(self.logInWindow, text="Log in", command=self.checkCredentials).pack(pady=15)
+
+        # wait for the window to be closed
+        #self.master.wait_window(self.logInWindow)
+
+    def checkCredentials(self):
+        if self.lockedUp == False:
+            enteredUsername = self.usernameEntry.get()
+            enteredPassword = self.passwordEntry.get()
+
+            loginMessage = {
+                "action": "login",
+                "clientId": self.clientId,
+                "username": enteredPassword,
+                "password": enteredUsername
+
+            }
+            # send message
+            self.reqSocket.send_json(loginMessage)
+        
+            response = self.reqSocket.recv_json()
+        
+            if self.attemptedLogins >= 3:
+                if 'failure' in response:
+                    self.attemptedLogins + 1
+                    messagebox.showinfo("Wrong credentials", "Wrong username or password, please try again")
+
+                elif 'success' in response:
+                    messagebox.showinfo(title="Successfully logged in!", message=("Welcome ",  self.enteredUsername, "!") )
+                    self.loggedIn = True
+                    # start app and destroy loginwindow
+                    self.startApplication()
+                    self.promptLogIn.destroy()
+
+            else:
+                messagebox.showinfo(title="Error", message="Too many login attempts made")
+                # lock out user from using ap
+                self.lockedUp = True
+
+                # close login window
+                self.promptLogIn.destroy()
+
+    def startApplication(self):
+        
+        
+
+
+
+
+            
+
+
+
+            
+    
+    #deadCode:
+        #subSocket = self.context.socket(zmq.SUB)
+        #subSocket.connect("tcp://127.0.0.1:5556")
+        #self.subSocket.setsockopt_string(zmq.SUBSCRIBE, self.clientId)
+    
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = userClient(root)
+    root.mainloop()
