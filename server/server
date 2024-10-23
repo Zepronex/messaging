@@ -1,0 +1,51 @@
+import zmq
+import time
+import threading
+
+# Initialize user data
+userCredentials = {
+    "administrator": "admin",
+    "Kim": "snygg",
+    "Oscar": "ginger",
+    "Aland": "freaky"
+}
+
+loggedIn = []
+bannedUsers = {}
+
+def server():
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://127.0.0.1:5555")
+
+    while True:
+        message = socket.recv_json()
+        if message.get("action") == "login":
+            user = message.get("username")
+            password = message.get("password")
+
+            # check if user is banned
+            if user in bannedUsers:
+                response = {"status": "banned"}
+            # Check if user exists and password matches
+            elif user in userCredentials and userCredentials[user] == password:
+                response = {"status": "success"}
+                loggedIn.append(user)
+            else:
+                response = {"status": "failure"}
+                
+            socket.send_json(response)
+        elif message.get("action") == "tooManyAttempts":
+            bannedUsers[user] = time.time()
+
+def unbanUsers():
+    while True:
+        currentTime = time.time()
+        usersToRemove = [user for user, timestamp in bannedUsers.items() if currentTime - timestamp > 300]
+        for user in usersToRemove:
+            del bannedUsers[user]
+        time.sleep(60) 
+
+if __name__ == "__main__":
+    threading.Thread(target=unbanUsers, daemon=True).start()
+    server()

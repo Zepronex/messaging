@@ -13,99 +13,86 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
-class messageApp(App):
-    def setup(self):
-        self.clientId = str(uuid.uuid4())
-        self.context = zmq.Context()
+from kivy.uix.popup import Popup
+from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
 
-        self.screenManager = ScreenManager()
-
-        # initialize login & chat screen
-        self.loginScreen = loginScreen(self)
-        self.chatScreen = chatScreen(self)
-
-        # add screens to manager
-        self.screenManager.add_widget(self.loginScreen)
-        self.screenManager.add_widget(self.chatScreen)
-
-        return self.screenManager
-
-class loginScreen(Screen):
-    def __init__(self, app, **kwargs):
-        super(loginScreen, self).__init__(name='login', **kwargs)
+class LoginScreen:
+    def __init__(self, app):
         self.app = app
+        self.lockedUp = False
         self.attemptedLogins = 0
         self.maxAttempts = 3
-        self.lockedUp = False # blocks user from attempting to login 
-
-        # set up ZMQ Req socket 
+        self.clientId = "your_client_id"  # Replace with actual client ID
         self.reqSocket = self.app.context.socket(zmq.REQ)
         self.reqSocket.connect("tcp://127.0.0.1:5555")
+        self.build_ui()
 
-        # build ui
-        layout = BoxLayout(orienteation='vertical', padding=20, spacing=10)
-
+    def build_ui(self):
+        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
         self.usernameLabel = Label(text='Username:')
         self.usernameInput = TextInput(multiline=False)
-
         self.passwordLabel = Label(text='Password:')
-        self.passwordInput = TextInput(multiline=False)
-
-
+        self.passwordInput = TextInput(multiline=False, password=True)
         self.loginButton = Button(text='Log in')
         self.loginButton.bind(on_press=self.checkCredentials)
-
         layout.add_widget(self.usernameLabel)
         layout.add_widget(self.usernameInput)
         layout.add_widget(self.passwordLabel)
         layout.add_widget(self.passwordInput)
-
+        layout.add_widget(self.loginButton)
         self.add_widget(layout)
 
     def checkCredentials(self, instance):
         if not self.lockedUp:
-            enteredUsername = self.usernameInput.strip()
-            enteredPassword = self.passwordInput.strip()
+            enteredUsername = self.usernameInput.text.strip()
+            enteredPassword = self.passwordInput.text.strip()
 
             loginMessage = {
                 "action": "login",
                 "clientId": self.clientId,
-                "username": enteredPassword,
-                "password": enteredUsername
-
+                "username": enteredUsername,
+                "password": enteredPassword
             }
+
             try:
-                # send message
                 self.reqSocket.send_json(loginMessage)
-        
                 response = self.reqSocket.recv_json()
-        
+
                 if response.get('status') == 'success':
-                    # login successful
-                    self.attemptedLogins + 1
-                    messagebox.showinfo("Wrong credentials", "Wrong username or password, please try again")
-
+                    self.handle_successful_login(enteredUsername)
                 else:
-                    # failed login
-                    self.attemptedLogins += 1
-                    if self.attemptedLogins >= self.maxAttempts:
-                        # lock out user from using ap
-                        self.lockedUp = True
-                        self.infoPopup("Error", "Too many attempts made")
-                    else:
-                        self.infoPopup("Login failed", "Wrong username or password, please try again")
+                    self.loginFailed()
+            except zmq.ZMQError as e:
+                self.infoPopup(title="Network Error", message=f"Network error occurred: {e}")
             except Exception as e:
-                self.infoPopup("Error", f"An error has occured: {e}")
+                self.infoPopup(title="Error", message=f"An error has occurred: {e}")
+            finally:
+                self.clearSensitiveData()
 
+    def handle_successful_login(self, username):
+        self.passwordInput.text = ''
+        self.app.chatScreenUsername = username
+        self.app.screen_manager.current = 'chat'
+        self.infoPopup(title="Login Successful!", message=f"Welcome {username}!")
+
+    def loginFailed(self, username):
+        self.attemptedLogins += 1
+        if self.attemptedLogins >= self.maxAttempts:
+            self.lockedUp = True
+            self.infoPopup(title="Error", message="Too many attempts made")
+            failed = {"action": "tooManyAttempts",
+                      "username": username}
+            self.reqSocket.send_json(failed)
+        else:
+            self.infoPopup(title="Login failed", message="Wrong username or password, please try again")
+
+    def clearSensitiveData(self):
+        self.passwordInput.text = ''
+
+    # popup window for displaying info
     def infoPopup(self, title, message):
         popup = Popup(title=title, content=Label(text=message), size_hint=(0.8, 0.2))
         popup.open()
-
-class chatScreen(Screen):
-    def __init__(self, app, **kwargs):
-        super(chatScreen, self).__init__(name='chat', **kwargs)
-        self.app = app
-        self.username = ''
-        self.stopEvent = threading.Event()
-
-        # build ui
