@@ -1,92 +1,127 @@
 import zmq
 import threading
-import uuid
-import time
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.textinput import TextInput
-from kivy.uix.popup import Popup
-from kivy.uix.label import Label
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
+import tkinter as tk
+from tkinter import scrolledtext, messagebox
 
-class LoginScreen:
-    def __init__(self, app):
-        self.app = app
-        self.lockedUp = False
-        self.attemptedLogins = 0
-        self.maxAttempts = 3
-        self.clientId = "your_client_id"  # Replace with actual client ID
-        self.reqSocket = self.app.context.socket(zmq.REQ)
-        self.reqSocket.connect("tcp://127.0.0.1:5555")
-        self.build_ui()
+# Server configuration
+HOST = '127.0.0.1'  # Change to the server's IP address if needed
+PORT = 5555
 
-    def build_ui(self):
-        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
-        self.usernameLabel = Label(text='Username:')
-        self.usernameInput = TextInput(multiline=False)
-        self.passwordLabel = Label(text='Password:')
-        self.passwordInput = TextInput(multiline=False, password=True)
-        self.loginButton = Button(text='Log in')
-        self.loginButton.bind(on_press=self.checkCredentials)
-        layout.add_widget(self.usernameLabel)
-        layout.add_widget(self.usernameInput)
-        layout.add_widget(self.passwordLabel)
-        layout.add_widget(self.passwordInput)
-        layout.add_widget(self.loginButton)
-        self.add_widget(layout)
+# GUI configuration
+BG_COLOR = '#2C2F33'
+TEXT_COLOR = '#FFFFFF'
+FONT = ('Verdana', 12)
+BUTTON_FONT = ('Verdana', 10)
+SMALL_FONT = ('Verdana', 10)
 
-    def checkCredentials(self, instance):
-        if not self.lockedUp:
-            enteredUsername = self.usernameInput.text.strip()
-            enteredPassword = self.passwordInput.text.strip()
+def update_chat_window(message):
+    # Display a message in the chat window.
+    chat_display.config(state=tk.NORMAL)
+    chat_display.insert(tk.END, message + '\n')
+    chat_display.config(state=tk.DISABLED)
+    chat_display.see(tk.END)
 
-            loginMessage = {
-                "action": "login",
-                "clientId": self.clientId,
-                "username": enteredUsername,
-                "password": enteredPassword
-            }
+def connect_to_server():
+    # Connect to the server and start listening for messages.
+    username = username_entry.get()
+    if username:
+        try:
+            # Connect to the server
+            context = zmq.Context()
+            socket = context.socket(zmq.DEALER)
+            identity = username.encode('utf-8')
+            socket.setsockopt(zmq.IDENTITY, identity)
+            socket.connect(f"tcp://{HOST}:{PORT}")
 
-            try:
-                self.reqSocket.send_json(loginMessage)
-                response = self.reqSocket.recv_json()
+            # Send the username to the server
+            socket.send_multipart([b'', f"USERNAME:{username}".encode('utf-8')])
 
-                if response.get('status') == 'success':
-                    self.handle_successful_login(enteredUsername)
-                else:
-                    self.loginFailed()
-            except zmq.ZMQError as e:
-                self.infoPopup(title="Network Error", message=f"Network error occurred: {e}")
-            except Exception as e:
-                self.infoPopup(title="Error", message=f"An error has occurred: {e}")
-            finally:
-                self.clearSensitiveData()
+            # Disable the username entry and button
+            username_entry.config(state=tk.DISABLED)
+            connect_button.config(state=tk.DISABLED)
 
-    def handle_successful_login(self, username):
-        self.passwordInput.text = ''
-        self.app.chatScreenUsername = username
-        self.app.screen_manager.current = 'chat'
-        self.infoPopup(title="Login Successful!", message=f"Welcome {username}!")
+            # Start a thread to listen for messages
+            threading.Thread(target=receive_messages, args=(socket,), daemon=True).start()
+        except zmq.ZMQError:
+            messagebox.showerror("Connection Error", f"Cannot connect to server at {HOST}:{PORT}")
+    else:
+        messagebox.showerror("Invalid Username", "Please enter a username")
 
-    def loginFailed(self, username):
-        self.attemptedLogins += 1
-        if self.attemptedLogins >= self.maxAttempts:
-            self.lockedUp = True
-            self.infoPopup(title="Error", message="Too many attempts made")
-            failed = {"action": "tooManyAttempts",
-                      "username": username}
-            self.reqSocket.send_json(failed)
-        else:
-            self.infoPopup(title="Login failed", message="Wrong username or password, please try again")
+def send_message():
+    #Send a message to the server.
+    message = message_entry.get()
+    if message:
+        try:
+            # Send the message to the server
+            context = zmq.Context.instance()
+            socket = context.socket(zmq.DEALER)
+            identity = username_entry.get().encode('utf-8')
+            socket.setsockopt(zmq.IDENTITY, identity)
+            socket.connect(f"tcp://{HOST}:{PORT}")
+            socket.send_multipart([b'', message.encode('utf-8')])
+            message_entry.delete(0, tk.END)
+        except zmq.ZMQError:
+            messagebox.showerror("Send Error", "Failed to send message to the server")
+    else:
+        messagebox.showerror("Empty Message", "Cannot send an empty message")
 
-    def clearSensitiveData(self):
-        self.passwordInput.text = ''
+def receive_messages(socket):
+    # Continuously listen for messages from the server.
+    while True:
+        try:
+            message = socket.recv_multipart()
+            _, content = message
+            content = content.decode('utf-8')
+            if content:
+                update_chat_window(content)
+            else:
+                messagebox.showerror("Error", "Received empty message from server")
+        except zmq.ZMQError:
+            break
 
-    # popup window for displaying info
-    def infoPopup(self, title, message):
-        popup = Popup(title=title, content=Label(text=message), size_hint=(0.8, 0.2))
-        popup.open()
+def on_close():
+    # Handle the window close event
+    context = zmq.Context.instance()
+    context.term()
+    root.destroy()
+
+# Create the main application window
+root = tk.Tk()
+root.title("Chat Application")
+root.geometry("600x500")
+root.configure(bg=BG_COLOR)
+
+# Username frame
+username_frame = tk.Frame(root, bg=BG_COLOR)
+username_frame.pack(pady=10)
+
+username_label = tk.Label(username_frame, text="Username:", font=FONT, bg=BG_COLOR, fg=TEXT_COLOR)
+username_label.pack(side=tk.LEFT, padx=5)
+
+username_entry = tk.Entry(username_frame, font=FONT)
+username_entry.pack(side=tk.LEFT, padx=5)
+
+connect_button = tk.Button(username_frame, text="Connect", font=BUTTON_FONT, command=connect_to_server)
+connect_button.pack(side=tk.LEFT, padx=5)
+
+# Chat display
+chat_display = scrolledtext.ScrolledText(root, font=SMALL_FONT, bg='#23272A', fg=TEXT_COLOR, state=tk.DISABLED)
+chat_display.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
+
+# Message entry
+message_frame = tk.Frame(root, bg=BG_COLOR)
+message_frame.pack(pady=10)
+
+message_entry = tk.Entry(message_frame, font=FONT, width=40)
+message_entry.pack(side=tk.LEFT, padx=5)
+
+send_button = tk.Button(message_frame, text="Send", font=BUTTON_FONT, command=send_message)
+send_button.pack(side=tk.LEFT, padx=5)
+
+root.protocol("WM_DELETE_WINDOW", on_close)
+
+def main():
+    root.mainloop()
+
+if __name__ == '__main__':
+    main()
