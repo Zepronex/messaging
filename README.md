@@ -1,2 +1,8 @@
-# Message app
-This is a work in progress messaging app which is built on a server client and user client. It works as any ordinary message app, where you may send messages to any of the users of the app. Uses ZMQ for network communication and TKinter for GUI.
+# Messaging Platform
+## Overview
+This Python-based messaging platform allows users to send and receive messages in real time. Built using ZMQ for networking and Kivy for the user interface, it is designed to demonstrate core messaging functionality.
+## Features
+
+Real-time text-based messaging.
+Simple graphical interface for chat interaction.
+Built-in support for multiple users via ZMQ sockets.
